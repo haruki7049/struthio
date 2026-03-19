@@ -61,8 +61,20 @@ websocket_handle(_Data, State) ->
 %% Handle internal Erlang messages (Pub/Sub broadcasts)
 websocket_info({new_event, Event}, State) ->
     Subs = maps:get(subs, State),
-    %% Push the event to all active subscriptions (ignoring filters for now)
-    Replies = [ {text, jsx:encode([~"EVENT", SubId, Event])} || SubId <- maps:keys(Subs) ],
+
+    %% Find subscriptions where the new event matches the filters
+    MatchingSubIds = maps:fold(fun(SubId, Filters, Acc) ->
+                                       case nostr_filter:match_filters(Event, Filters) of
+                                           true -> [SubId | Acc];
+                                           false -> Acc
+                                       end
+                               end,
+                               [],
+                               Subs),
+
+    %% Push the event only to matching subscriptions
+    Replies = [ {text, jsx:encode([~"EVENT", SubId, Event])} || SubId <- MatchingSubIds ],
+
     {reply, Replies, State};
 
 websocket_info(_Info, State) ->

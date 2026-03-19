@@ -34,11 +34,21 @@ delete_expired(Now) ->
     mnesia:transaction(F).
 
 
-%% Fetch events (Currently ignores filters and returns all)
-get_events(_Filters) ->
+%% Fetch events with filters and sorting
+get_events(Filters) ->
     F = fun() ->
                 mnesia:match_object({nostr_event, '_', '_', '_'})
         end,
     {atomic, Records} = mnesia:transaction(F),
-    %% Extract only the event_data map
-    [ EventData || #nostr_event{event_data = EventData} <- Records ].
+
+    %% Extract event maps
+    AllEvents = [ EventData || #nostr_event{event_data = EventData} <- Records ],
+
+    %% Apply filters
+    FilteredEvents = lists:filter(fun(Ev) -> nostr_filter:match_filters(Ev, Filters) end, AllEvents),
+
+    %% Sort descending by created_at (Newest first)
+    lists:sort(fun(A, B) ->
+                       maps:get(~"created_at", A, 0) >= maps:get(~"created_at", B, 0)
+               end,
+               FilteredEvents).
