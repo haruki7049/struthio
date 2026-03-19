@@ -28,7 +28,7 @@ handle_call({process_event, Event}, _From, State) ->
             %% Reject immediately if capacity is reached
             {reply, {error, disk_full}, State#{status => read_only}};
         ok ->
-            EventId = maps:get(<<"id">>, Event),
+            EventId = maps:get(~"id", Event),
             Expiration = calculate_expiration(Event),
             nostr_db:store_event(EventId, {Event, Expiration}),
             {reply, ok, State#{status => accept_all}}
@@ -64,7 +64,7 @@ check_storage_capacity() ->
 
 
 calculate_expiration(Event) ->
-    Tags = maps:get(<<"tags">>, Event, []),
+    Tags = maps:get(~"tags", Event, []),
     case find_expiration_tag(Tags) of
         {ok, ExpStr} ->
             %% Apply NIP-40 expiration tag
@@ -78,6 +78,6 @@ calculate_expiration(Event) ->
     end.
 
 
-find_expiration_tag([[<<"expiration">>, Value] | _]) -> {ok, Value};
+find_expiration_tag([[~"expiration", Value] | _]) -> {ok, Value};
 find_expiration_tag([_ | T]) -> find_expiration_tag(T);
 find_expiration_tag([]) -> error.

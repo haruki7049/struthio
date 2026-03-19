@@ -1,5 +1,5 @@
 -module(nostr_db).
--export([init/0, store_event/2, delete_expired/1]).
+-export([init/0, store_event/2, delete_expired/1, get_events/1]).
 -record(nostr_event, {id, event_data, expires_at}).
 
 
@@ -32,3 +32,13 @@ delete_expired(Now) ->
                 lists:foreach(fun(Key) -> mnesia:delete({nostr_event, Key}) end, Keys)
         end,
     mnesia:transaction(F).
+
+
+%% Fetch events (Currently ignores filters and returns all)
+get_events(_Filters) ->
+    F = fun() ->
+                mnesia:match_object({nostr_event, '_', '_', '_'})
+        end,
+    {atomic, Records} = mnesia:transaction(F),
+    %% Extract only the event_data map
+    [ EventData || #nostr_event{event_data = EventData} <- Records ].
