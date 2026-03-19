@@ -1,3 +1,4 @@
+# Rebar3 (Erlang)
 .rebar3
 _build
 _checkouts
@@ -19,3 +20,8 @@ logs
 rebar3.crashdump
 *~
 Mnesia.*/
+
+# Nix
+.direnv/
+result*
+result-*
