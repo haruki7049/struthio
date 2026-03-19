@@ -17,7 +17,7 @@ process_event(Event) ->
 %% Gen Server Callbacks
 init([]) ->
     %% Schedule the first cleanup cycle
-    Interval = application:get_env(nostr_relay, cleanup_interval, 60000),
+    Interval = application:get_env(struthio, cleanup_interval, 60000),
     erlang:send_after(Interval, self(), cleanup_tick),
     {ok, #{status => accept_all}}.
 
@@ -48,7 +48,7 @@ handle_info(cleanup_tick, State) ->
     nostr_db:delete_expired(Now),
 
     %% Reschedule next cleanup
-    Interval = application:get_env(nostr_relay, cleanup_interval, 60000),
+    Interval = application:get_env(struthio, cleanup_interval, 60000),
     erlang:send_after(Interval, self(), cleanup_tick),
     {noreply, State}.
 
@@ -57,7 +57,7 @@ handle_info(cleanup_tick, State) ->
 
 
 check_storage_capacity() ->
-    Limit = application:get_env(nostr_relay, storage_limit_pct, 85),
+    Limit = application:get_env(struthio, storage_limit_pct, 85),
     %% Note: Actual OS disk check logic goes here (e.g., using disksup)
     CurrentUsage = 70,  %% Dummy value
     if CurrentUsage >= Limit -> full; true -> ok end.
@@ -71,7 +71,7 @@ calculate_expiration(Event) ->
             binary_to_integer(ExpStr);
         error ->
             %% Apply default TTL from config
-            case application:get_env(nostr_relay, default_ttl) of
+            case application:get_env(struthio, default_ttl) of
                 {ok, TTL} -> erlang:system_time(second) + TTL;
                 undefined -> infinity  %% Store forever if no config exists
             end
