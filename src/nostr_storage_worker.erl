@@ -31,6 +31,11 @@ handle_call({process_event, Event}, _From, State) ->
             EventId = maps:get(~"id", Event),
             Expiration = calculate_expiration(Event),
             nostr_db:store_event(EventId, {Event, Expiration}),
+
+            %% Broadcast the new event to all WebSocket processes
+            Clients = pg:get_members(nostr_clients),
+            lists:foreach(fun(Pid) -> Pid ! {new_event, Event} end, Clients),
+
             {reply, ok, State#{status => accept_all}}
     end;
 

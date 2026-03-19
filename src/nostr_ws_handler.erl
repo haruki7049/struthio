@@ -3,58 +3,53 @@
 -export([init/2, websocket_init/1, websocket_handle/2, websocket_info/2]).
 
 
-init(Req, State) ->
-    %% Upgrade the HTTP request to a WebSocket connection
-    {cowboy_websocket, Req, State}.
+init(Req, _State) ->
+    %% Initialize state with an empty subscriptions map
+    {cowboy_websocket, Req, #{subs => #{}}}.
 
 
 websocket_init(State) ->
+    %% Join the process group for broadcasting
+    pg:join(nostr_clients, self()),
     {ok, State}.
 
 
-%% Handle incoming text messages from the Nostr client
 websocket_handle({text, Msg}, State) ->
     try jsx:decode(Msg, [return_maps]) of
-        %% NIP-01: Client sends an EVENT
         [~"EVENT", Event] ->
             EventId = maps:get(~"id", Event),
-            %% Pass the parsed map to our storage worker
             case nostr_storage_worker:process_event(Event) of
                 ok ->
-                    %% NIP-20: Send OK response (Success)
                     Reply = jsx:encode([~"OK", EventId, true, ~""]),
                     {reply, {text, Reply}, State};
                 {error, Reason} ->
-                    %% NIP-20: Send OK response (Failure)
                     ReasonBin = list_to_binary(io_lib:format("~p", [Reason])),
                     Reply = jsx:encode([~"OK", EventId, false, <<"error: ", ReasonBin/binary>>]),
                     {reply, {text, Reply}, State}
             end;
 
-        %% NIP-01: Client requests events
-        [~"REQ", SubscriptionId | Filters] ->
+        [~"REQ", SubId | Filters] ->
+            %% Add subscription to state
+            Subs = maps:get(subs, State),
+            NewState = State#{subs => Subs#{SubId => Filters}},
+
+            %% Fetch and send past events
             Events = nostr_db:get_events(Filters),
+            EventReplies = [ {text, jsx:encode([~"EVENT", SubId, Ev])} || Ev <- Events ],
+            EoseReply = {text, jsx:encode([~"EOSE", SubId])},
 
-            %% Create EVENT messages for each stored event
-            EventReplies = [ {text, jsx:encode([~"EVENT", SubscriptionId, Ev])} || Ev <- Events ],
+            {reply, EventReplies ++ [EoseReply], NewState};
 
-            %% Create EOSE (End of Stored Events) message
-            EoseReply = {text, jsx:encode([~"EOSE", SubscriptionId])},
+        [~"CLOSE", SubId] ->
+            %% Remove subscription from state
+            Subs = maps:get(subs, State),
+            NewState = State#{subs => maps:remove(SubId, Subs)},
+            {ok, NewState};
 
-            %% Send all events followed by EOSE
-            {reply, EventReplies ++ [EoseReply], State};
-
-        %% NIP-01: Client closes subscription
-        [~"CLOSE", _SubscriptionId] ->
-            %% Currently stateless, so just ignore
-            {ok, State};
-
-        %% Ignore other message types (REQ, CLOSE) for now
         _Other ->
             {ok, State}
     catch
         _:_ ->
-            %% Invalid JSON format
             ErrorReply = jsx:encode([~"NOTICE", ~"invalid: bad JSON"]),
             {reply, {text, ErrorReply}, State}
     end;
@@ -62,6 +57,13 @@ websocket_handle({text, Msg}, State) ->
 websocket_handle(_Data, State) ->
     {ok, State}.
 
+
+%% Handle internal Erlang messages (Pub/Sub broadcasts)
+websocket_info({new_event, Event}, State) ->
+    Subs = maps:get(subs, State),
+    %% Push the event to all active subscriptions (ignoring filters for now)
+    Replies = [ {text, jsx:encode([~"EVENT", SubId, Event])} || SubId <- maps:keys(Subs) ],
+    {reply, Replies, State};
 
 websocket_info(_Info, State) ->
     {ok, State}.

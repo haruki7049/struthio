@@ -10,6 +10,14 @@ start_link() ->
 init([]) ->
     SupFlags = #{strategy => one_for_all, intensity => 3, period => 5},
     ChildSpecs = [#{
+                    id => pg,
+                    start => {pg, start_link, []},
+                    restart => permanent,
+                    shutdown => 5000,
+                    type => worker,
+                    modules => [pg]
+                   },
+                  #{
                     id => nostr_storage_worker,
                     start => {nostr_storage_worker, start_link, []},
                     restart => permanent,
