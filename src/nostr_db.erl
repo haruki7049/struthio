@@ -1,0 +1,34 @@
+-module(nostr_db).
+-export([init/0, store_event/2, delete_expired/1]).
+-record(nostr_event, {id, event_data, expires_at}).
+
+
+init() ->
+    %% Create schema on local node and start Mnesia
+    mnesia:create_schema([node()]),
+    mnesia:start(),
+    mnesia:create_table(nostr_event,
+                        [{attributes, record_info(fields, nostr_event)},
+                         {disc_copies, [node()]}]),
+    mnesia:wait_for_tables([nostr_event], 5000).
+
+
+store_event(EventId, {EventData, ExpiresAt}) ->
+    %% Write a new event to Mnesia within a transaction
+    F = fun() ->
+                mnesia:write(#nostr_event{id = EventId, event_data = EventData, expires_at = ExpiresAt})
+        end,
+    {atomic, ok} = mnesia:transaction(F),
+    ok.
+
+
+delete_expired(Now) ->
+    %% Select and delete all events where expires_at is less than Now
+    F = fun() ->
+                MatchHead = #nostr_event{id = '$1', event_data = '_', expires_at = '$2'},
+                Guard = {'<', '$2', Now},
+                Result = '$1',
+                Keys = mnesia:select(nostr_event, [{MatchHead, [Guard], [Result]}]),
+                lists:foreach(fun(Key) -> mnesia:delete({nostr_event, Key}) end, Keys)
+        end,
+    mnesia:transaction(F).
